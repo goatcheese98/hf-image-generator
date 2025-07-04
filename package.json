@@ -1,6 +1,7 @@
 {
   "name": "Scrim-s05r36f",
   "description": "https://scrimba.com/the-ai-engineer-path-c02v/~01d",
+  "type": "module",
   "scripts": {
     "start": "vite",
     "dev": "vite",
