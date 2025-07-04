@@ -1,4 +1,5 @@
 import { HfInference } from '@huggingface/inference'
+import { blobToBase64 } from './utils.js'
 
 // Global variables
 let hf = null;
