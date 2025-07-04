@@ -10,6 +10,9 @@ async function blobToBase64(blob) {
   });
 }
 
+// Debug: Verify function is loaded
+console.log('blobToBase64 function loaded:', typeof blobToBase64);
+
 // Global variables
 let hf = null;
 let currentToken = import.meta.env.VITE_HF_TOKEN;
@@ -414,7 +417,15 @@ async function generateImage() {
     updateStatus('generation', 'Converting image...', 'info');
     debugLog(`Image generated, size: ${imageBlob.size} bytes`);
     
+    // Debug: Check if blobToBase64 function is available
+    if (typeof blobToBase64 === 'undefined') {
+      debugLog('ERROR: blobToBase64 function is not defined!', 'error');
+      throw new Error('blobToBase64 function is not available');
+    }
+    
+    debugLog('Converting blob to base64...');
     const newImageBase64 = await blobToBase64(imageBlob);
+    debugLog('Base64 conversion completed');
     
     // Display the new image and hide placeholder
     elements.newImage.src = newImageBase64;
