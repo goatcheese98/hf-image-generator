@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+    <head>
+        <title>HuggingFace Image Generator</title>
+        <link rel="stylesheet" href="index.css">
+    </head>
+    <body>
+        <!-- Header -->
+        <header>
+            <img src="hf-logo.svg" alt="HuggingFace Logo">
+            <h1>HuggingFace Image Generator</h1>
+            <p>Generate AI images using HuggingFace models</p>
+        </header>
+
+        <!-- Step 1: Setup & Authentication -->
+        <section id="setup-section">
+            <h2>Step 1: Setup & Authentication</h2>
+            <div class="card">
+                <div class="control-group">
+                    <label for="token-input">HuggingFace Token:</label>
+                    <div class="input-with-button">
+                        <input type="password" id="token-input" placeholder="Enter your HF token (required)">
+                        <button id="test-token-btn">Test Token</button>
+                    </div>
+                    <small>Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
+                </div>
+                
+                <!-- Status Display -->
+                <div id="status-display">
+                    <div class="status-item">
+                        <span class="status-label">Token:</span>
+                        <span id="token-status-text" class="status-value">Not tested</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 2: Image Generation -->
+        <section id="generation-section">
+            <h2>Step 2: Generate Image</h2>
+            <div class="card">
+                <!-- Mode Toggle -->
+                <div class="mode-toggle">
+                    <label class="toggle-label">
+                        <input type="radio" name="generation-mode" value="generate" id="generate-mode" checked>
+                        <span>Generate Image</span>
+                    </label>
+                    <label class="toggle-label">
+                        <input type="radio" name="generation-mode" value="recreate" id="recreate-mode">
+                        <span>Recreate Image</span>
+                    </label>
+                </div>
+
+                <!-- Generate Image Mode -->
+                <div id="generate-mode-content" class="mode-content">
+                    <div class="control-group">
+                        <label for="model-select">Select Model:</label>
+                        <select id="model-select">
+                            <option value="black-forest-labs/FLUX.1-schnell">FLUX.1 Schnell (Fast)</option>
+                            <option value="black-forest-labs/FLUX.1-dev">FLUX.1 Dev (High Quality)</option>
+                            <option value="stabilityai/stable-diffusion-xl-base-1.0">Stable Diffusion XL</option>
+                            <option value="stabilityai/stable-diffusion-3.5-large">Stable Diffusion 3.5 Large</option>
+                            <option value="stabilityai/stable-diffusion-3.5-medium">Stable Diffusion 3.5 Medium</option>
+                            <option value="runwayml/stable-diffusion-v1-5">Stable Diffusion 1.5</option>
+                            <option value="CompVis/stable-diffusion-v1-4">Stable Diffusion 1.4</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="prompt-input">Image Prompt:</label>
+                        <textarea id="prompt-input" placeholder="Describe the image you want to generate..."></textarea>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="test-api-btn" class="secondary-btn">Test API Connection</button>
+                        <button id="generate-btn" class="primary-btn">Generate Image</button>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-label">API:</span>
+                        <span id="api-status-text" class="status-value">Not tested</span>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-label">Generation:</span>
+                        <span id="generation-status-text" class="status-value">Ready</span>
+                    </div>
+                </div>
+
+                <!-- Recreate Image Mode -->
+                <div id="recreate-mode-content" class="mode-content" style="display: none;">
+                    <div class="control-group">
+                        <label for="recreate-model-select">Select Model:</label>
+                        <select id="recreate-model-select">
+                            <option value="black-forest-labs/FLUX.1-schnell">FLUX.1 Schnell (Fast, Enhanced Text)</option>
+                            <option value="black-forest-labs/FLUX.1-dev">FLUX.1 Dev (High Quality, Enhanced Text)</option>
+                            <option value="stabilityai/stable-diffusion-xl-base-1.0">Stable Diffusion XL (Enhanced Text)</option>
+                            <option value="stabilityai/stable-diffusion-3.5-large">Stable Diffusion 3.5 Large (Enhanced Text)</option>
+                            <option value="stabilityai/stable-diffusion-3.5-medium">Stable Diffusion 3.5 Medium (Enhanced Text)</option>
+                            <option value="runwayml/stable-diffusion-v1-5">Stable Diffusion 1.5 (Enhanced Text)</option>
+                            <option value="CompVis/stable-diffusion-v1-4">Stable Diffusion 1.4 (Enhanced Text)</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="reference-image-input">Reference Image:</label>
+                        <div class="file-input-container">
+                            <input type="file" id="reference-image-input" accept="image/*">
+                            <small>Upload your own reference image or use the default one</small>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="recreate-prompt">Transformation Prompt:</label>
+                        <input type="text" id="recreate-prompt" placeholder="Describe how you want to transform the reference image (e.g., 'make it a watercolor painting', 'convert to anime style', 'add sunset lighting')">
+                        <small class="help-text">This prompt will be used to transform the reference image above. The AI will analyze the reference image and create enhanced text prompts that incorporate its visual details, then generate a new image based on your transformation request.</small>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="test-recreate-api-btn" class="secondary-btn">Test API Connection</button>
+                        <button id="recreate-btn" class="primary-btn">Recreate Image</button>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-label">API:</span>
+                        <span id="recreate-api-status-text" class="status-value">Not tested</span>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-label">Recreation:</span>
+                        <span id="recreation-status-text" class="status-value">Ready</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 3: Results -->
+        <section id="results-section">
+            <h2>Step 3: Results</h2>
+            
+            <!-- Generate Mode Results -->
+            <div id="generate-results" class="results-container">
+                <div class="single-image-section">
+                    <h4>Generated Image</h4>
+                    <div id="new-image-container">
+                        <img id="new-image" alt="Generated image will appear here" />
+                        <div id="loading-spinner" class="spinner" style="display: none;">
+                            <div class="spinner-circle"></div>
+                            <p>Generating image...</p>
+                        </div>
+                        <div id="placeholder-text" class="placeholder">
+                            Generated image will appear here
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recreate Mode Results -->
+            <div id="recreate-results" class="results-container" style="display: none;">
+                <div id="image-container">
+                    <div class="image-section">
+                        <h4>Reference Image</h4>
+                        <img id="old-image" src="old-photo.jpeg" alt="Reference image">
+                    </div>
+                    <div class="image-section">
+                        <h4>Recreated Image</h4>
+                        <div id="recreated-image-container">
+                            <img id="recreated-image" alt="Recreated image will appear here" />
+                            <div id="recreate-loading-spinner" class="spinner" style="display: none;">
+                                <div class="spinner-circle"></div>
+                                <p>Recreating image...</p>
+                            </div>
+                            <div id="recreate-placeholder-text" class="placeholder">
+                                Recreated image will appear here
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Messages -->
+        <div id="error-message"></div>
+        <div id="success-message"></div>
+
+        <!-- Debug Console (Collapsible) -->
+        <section id="debug-section">
+            <div class="debug-header" onclick="toggleDebugConsole()">
+                <h3>Debug Console</h3>
+                <span id="debug-toggle">▼</span>
+            </div>
+            <div id="debug-console" class="collapsed">
+                <div id="debug-output"></div>
+                <button id="clear-debug-btn">Clear Debug</button>
+            </div>
+        </section>
+
+        <script src="utils.js"></script>
+        <script type="module" src="index.js"></script>
+    </body>
+</html>
