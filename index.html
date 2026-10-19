@@ -19,7 +19,7 @@
                 <div class="control-group">
                     <label for="token-input">HuggingFace Token:</label>
                     <div class="input-with-button">
-                        <input type="password" id="token-input" placeholder="Enter your HF token (required)">
+                        <input type="password" id="token-input" autocomplete="off" spellcheck="false" placeholder="Enter your HF token (required)">
                         <button id="test-token-btn">Test Token</button>
                     </div>
                     <small>Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
@@ -144,6 +144,7 @@
                     <h4>Generated Image</h4>
                     <div id="new-image-container">
                         <img id="new-image" alt="Generated image will appear here" />
+                        <a id="download-image" download="generated-image.png" hidden>Download image</a>
                         <div id="loading-spinner" class="spinner" style="display: none;">
                             <div class="spinner-circle"></div>
                             <p>Generating image...</p>
@@ -166,6 +167,7 @@
                         <h4>Recreated Image</h4>
                         <div id="recreated-image-container">
                             <img id="recreated-image" alt="Recreated image will appear here" />
+                            <a id="download-recreated" download="recreated-image.png" hidden>Download image</a>
                             <div id="recreate-loading-spinner" class="spinner" style="display: none;">
                                 <div class="spinner-circle"></div>
                                 <p>Recreating image...</p>
@@ -185,7 +187,7 @@
 
         <!-- Debug Console (Collapsible) -->
         <section id="debug-section">
-            <div class="debug-header" onclick="toggleDebugConsole()">
+            <div class="debug-header" id="debug-header">
                 <h3>Debug Console</h3>
                 <span id="debug-toggle">▼</span>
             </div>
@@ -195,7 +197,6 @@
             </div>
         </section>
 
-        <script src="utils.js"></script>
-        <script type="module" src="index.js"></script>
+        <script type="module" src="index.ts"></script>
     </body>
 </html>
