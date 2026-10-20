@@ -4,5 +4,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"], "strict": true,
     "noEmit": true, "noUncheckedIndexedAccess": true, "skipLibCheck": true
   },
-  "include": ["*.ts", "tests/**/*.ts"]
+  "include": ["*.ts", "tests/**/*.ts", "server/**/*.ts", "shared/**/*.ts"]
 }

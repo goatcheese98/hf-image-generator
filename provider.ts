@@ -1,88 +1,36 @@
-import { HfInference } from '@huggingface/inference';
+import { API_PATH, LIMITS, type CredentialMode, type GenerateRequest, type RecreateRequest, type ImageResult, type ProviderRequest } from './shared/contracts';
+import { blobToBase64 } from './utils';
+export type { GenerateRequest, RecreateRequest, ImageResult } from './shared/contracts';
 
-export interface GenerateRequest { model: string; prompt: string }
-export interface RecreateRequest extends GenerateRequest { reference: Blob }
-export interface ImageResult { image: Blob; method: 'text' | 'image' | 'enhanced-text' }
-interface ImageParameters {
-  prompt: string;
-  strength: number;
-  guidance_scale: number;
-  num_inference_steps: number;
-  controlnet_conditioning_scale?: number;
-  control_guidance_start?: number;
-  control_guidance_end?: number;
-}
-class ProviderError extends Error {
-  constructor(readonly status: number) { super(`Provider request failed (${status})`); }
-}
-
-// Credentials are owned by the caller and retained only in memory. Never log responses
-// or SDK errors: a provider may echo sensitive request headers in an error body.
+// Only intentionally entered user credentials may exist here. Hosted provider
+// credentials are selected and authorized exclusively inside the server handler.
 export class ImageProvider {
-  private readonly client: HfInference;
-  constructor(private readonly token: string) { this.client = new HfInference(token); }
-
-  async validateToken(): Promise<void> {
-    const response = await fetch('https://huggingface.co/api/whoami-v2', {
-      headers: { Authorization: `Bearer ${this.token}` },
+  constructor(private readonly token: string, private readonly mode: CredentialMode = 'user') {}
+  private async request(input: ProviderRequest): Promise<Response> {
+    const response = await fetch(API_PATH, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      signal: AbortSignal.timeout(LIMITS.timeoutMs + 5000),
+      headers: {'Content-Type': 'application/json', 'X-Credential-Mode': this.mode,
+        ...(this.mode === 'user' ? {Authorization: `Bearer ${this.token}`} : {})},
+      body: JSON.stringify(input),
     });
-    if (!response.ok) throw new ProviderError(response.status);
-    const result: unknown = await response.json();
-    if (!result || typeof result !== 'object' || !('name' in result) || typeof result.name !== 'string') {
-      throw new Error('Invalid identity response');
-    }
+    if (!response.ok) throw new Error('Provider request unavailable');
+    return response;
   }
-
-  private async request(model: string, body: () => BodyInit, json: boolean, delay: number): Promise<Blob> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${this.token}`, ...(json ? {'Content-Type': 'application/json'} : {}) },
-        body: body(),
-      });
-      if (response.status === 503 && attempt === 0) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      if (!response.ok) throw new ProviderError(response.status);
-      if (!response.headers.get('content-type')?.startsWith('image/')) throw new Error('Expected an image');
-      const image = await response.blob();
-      if (!image.size) throw new Error('Empty image');
-      return image;
-    }
-    throw new Error('Retry exhausted');
+  async validateToken(): Promise<void> {await this.request({action: 'token'});}
+  private async image(input: ProviderRequest): Promise<ImageResult> {
+    const response = await this.request(input);
+    const image = await response.blob();
+    const method = response.headers.get('X-Image-Method');
+    if (!image.size || image.size > LIMITS.responseBytes || !['image/png','image/jpeg','image/webp'].includes(image.type)
+      || !['text','image','enhanced-text'].includes(method ?? '')) throw new Error('Invalid image response');
+    return {image, method: method as ImageResult['method']};
   }
-
-  async generate({model, prompt}: GenerateRequest): Promise<ImageResult> {
-    const request = {model, inputs: prompt, parameters: {width: 512, height: 512, num_inference_steps: 20, guidance_scale: 7.5}};
-    try {
-      const image = await this.client.textToImage(request);
-      if (!image.size || !image.type.startsWith('image/')) throw new Error('Expected an image');
-      return {image, method: 'text'};
-    } catch {
-      const {model: _model, ...payload} = request;
-      return {image: await this.request(model, () => JSON.stringify(payload), true, 10000), method: 'text'};
-    }
+  async generate(input: GenerateRequest): Promise<ImageResult> {
+    return this.image({action: 'generate', ...input});
   }
-
   async recreate({model, prompt, reference}: RecreateRequest): Promise<ImageResult> {
-    const control = model.toLowerCase().includes('controlnet');
-    const parameters: ImageParameters = {prompt, strength: control ? 0.8 : 0.75, guidance_scale: 7.5, num_inference_steps: 20,
-      ...(control ? {controlnet_conditioning_scale: 1, control_guidance_start: 0, control_guidance_end: 1} : {})};
-    try {
-      const image = await this.request(model, () => {
-        const form = new FormData();
-        form.append('inputs', reference); form.append('parameters', JSON.stringify(parameters));
-        return form;
-      }, false, 15000);
-      return {image, method: 'image'};
-    } catch (error) {
-      if (!(error instanceof ProviderError) || ![400, 404].includes(error.status)) throw error;
-      const enhanced = control
-        ? `${prompt}, maintaining original structure and composition, edge-guided transformation, precise control, high quality, detailed`
-        : `${prompt}, based on a vintage black and white photograph, maintaining the original composition and subject matter, high quality, detailed`;
-      const result = await this.generate({model, prompt: enhanced});
-      return {...result, method: 'enhanced-text'};
-    }
+    if (reference.size > LIMITS.referenceBytes) throw new Error('Reference image is too large');
+    return this.image({action: 'recreate', model, prompt, reference: await blobToBase64(reference)});
   }
 }

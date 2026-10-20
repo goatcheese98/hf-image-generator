@@ -1,29 +1,30 @@
 # HuggingFace Image Generator
 
-A Vite application written in strict TypeScript. Requires Node 22.12+ (CI uses Node 24).
+Native browser TypeScript, Vite and a same-origin Cloudflare Worker provider boundary. Node 22.12+; CI uses Node 24. The interface preserves the existing sections and model controls, with LUM foundation styling and bundled Geist fonts.
 
 ```sh
 npm ci
 npm run typecheck
+npm run test:api
 npm run build
+npm run check:assets
 npx playwright install --with-deps chromium
 npm run test:browser
-npm run check:assets
-npm run dev -- --host 127.0.0.1
+CLOUDFLARE_SEND_METRICS=false npm run dry-run
 ```
 
-The module entry is `index.html` → `index.ts`; `utils.ts` is imported by the module graph. Do not serve TypeScript directly with a static file server. `npm run preview -- --host 127.0.0.1` serves the production build at `/hf-image-generator/`. Vite is pinned in the manifest and lockfile. Set `CHROMIUM_PATH` to use an existing Chromium installation for tests.
+All tests are offline. Playwright starts a loopback fixture server that runs the **real handler and quota code** with mocked upstream identity/image responses. No real provider credentials or external calls are needed. Set `CHROMIUM_PATH` to use installed Chromium. `npm run test:serve` is a test-only loopback fixture server; never deploy it. `npm run dev` and `npm run preview` serve assets only and do not enable a provider. See [server setup](docs/provider-boundary.md) for the production architecture and human provisioning needs.
 
-## Credentials and provider boundary
+The module entry is `index.html` → `index.ts`; `utils.ts` and `shared/contracts.ts` are imported through Vite. Worker code, authorization logic and secrets never enter the browser module graph. `npm run check:assets` builds with nonsecret credential sentinels and scans all emitted client files for the sentinel and server credential/auth identifiers.
 
-Enter your own HuggingFace token in the password field. It stays in memory for this page session; clearing the field removes the active credential and reload requires entry again. Requests send it directly to HuggingFace over HTTPS. Pending requests may finish after clearing, but their results are discarded. No credential is stored in local/session storage, cookies, source code or application logs. Raw provider errors are deliberately not displayed because they could echo credentials. Browser extensions and scripts running in the page can access user input; this is an intentional personal credential flow.
+## Credentials
 
-There is no application-owned `VITE_HF_TOKEN` fallback. Never put a provider secret into a Vite environment variable or client bundle. Before enabling a public hosted credential, implement a **server-side provider boundary with bounded access**: authenticate callers, authorize operations/models, enforce per-user quotas and rate limits, cap request sizes and provider spending, and redact secrets from logs. An unprotected paid proxy is not acceptable. This change does not introduce a proxy or alter authentication on the provider.
+“My token” is the default. Enter a personal HuggingFace token intentionally; it stays in memory and is sent to this site's same-origin handler, which forwards it only to fixed HuggingFace HTTPS endpoints. There is no storage, cookie or build-time token fallback. Clearing or switching credential source removes the active user credential; reloading requires entry again. In-flight results are discarded after a credential change. Browser extensions and scripts in the page can read input; use a trusted deployment.
 
-`provider.ts` owns typed generation/recreation contracts, SDK/direct fallback and one bounded direct retry after HTTP 503. The UI owns selection, loading, messages and image display/download. Recreation retains the existing enhanced text fallback for unsupported image-to-image models (400/404); that fallback uses a fixed reference description and does not analyze the uploaded image. API test controls intentionally issue generation requests when used outside the offline suite. Model/provider compatibility has not been tested with live requests.
+“Hosted access” sends no provider token from the browser. The handler requires configured server bindings, a cryptographically verified Cloudflare Access JWT and an explicitly allowed subject. Unconfigured/unauthorized requests fail closed before any provider call. There are no provisioned secrets, identities, routes or deployments in this change.
 
-## Offline regressions
+Raw provider errors, identity payloads and credentials are never logged or returned. Images and API responses are not cached. The former browser provider SDK is removed; the server owns bounded retry and image-to-image fallback. The fallback uses a fixed vintage photograph description, not image analysis. API test buttons consume the same quotas as generation.
 
-Playwright serves the production bundle over loopback, intercepts every external request, and supplies dummy identity, token and PNG fixtures. Tests cover module startup without export syntax errors, user token entry/clearing/reload, selected models, success/failure, retries, reference upload, recreation fallback, and download bytes. No real provider credentials are required. `check:assets` builds into an ignored temporary directory with a nonsecret credential sentinel and scans every emitted file for that sentinel and the removed build-time variable name.
+## Verification and styling
 
-CI runs locked installation, typecheck/build, asset inspection and Chromium tests before the existing Pages deployment job can run on a push to `main`. Pull requests run verification only.
+See [the foundation record](docs/lum-foundation.md) for permitted references, font licenses, fallback stacks and cloud screenshots. This is styling within the existing layout, not a Paper design or human design approval. CI runs install, strict types, API abuse tests, production build, artifact scanning, dependency audit, Worker dry-run and Chromium flows. The old static Pages deployment job is removed because it cannot host the same-origin API. CI performs **no deployment**.

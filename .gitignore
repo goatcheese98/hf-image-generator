@@ -35,3 +35,7 @@ Thumbs.db
 work/
 test-results/
 playwright-report/
+
+.wrangler/
+.dev.vars
+.dev.vars.*

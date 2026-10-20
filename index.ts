@@ -1,9 +1,12 @@
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
 import { ImageProvider } from './provider';
 import { blobToBase64 } from './utils';
 
 // Global variables
 let hf: ImageProvider | null = null;
 let currentToken = '';
+let uploadedReference: Blob | null = null;
 
 // UI Elements
 function required<T extends HTMLElement>(id: string, type: { new(): T }): T {
@@ -12,6 +15,7 @@ function required<T extends HTMLElement>(id: string, type: { new(): T }): T {
   return element;
 }
 const elements = {
+  credentialMode: required('credential-mode', HTMLSelectElement),
   tokenInput: required('token-input', HTMLInputElement),
   modelSelect: required('model-select', HTMLSelectElement),
   promptInput: required('prompt-input', HTMLTextAreaElement),
@@ -58,7 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const debugToggle = required('debug-toggle', HTMLElement);
   if (debugConsole && debugToggle) {
     debugConsole.classList.add('collapsed');
-    debugToggle.textContent = '▶';
+    required('debug-header', HTMLElement).setAttribute('aria-expanded', 'false');
+    debugToggle.textContent = '+';
     debugToggle.style.transform = 'rotate(-90deg)';
   }
 });
@@ -82,6 +87,17 @@ function setupEventListeners() {
   elements.recreateBtn.addEventListener('click', recreateImage);
   elements.referenceImageInput.addEventListener('change', handleReferenceImageUpload);
 
+  elements.credentialMode.addEventListener('change', () => {
+    currentToken = ''; elements.tokenInput.value = '';
+    const hosted = elements.credentialMode.value === 'service';
+    elements.tokenInput.disabled = hosted;
+    for (const select of [elements.modelSelect, elements.recreateModelSelect]) {
+      for (const option of select.options) option.disabled = hosted && option.index !== 0;
+      if (hosted) select.selectedIndex = 0;
+    }
+    initializeHF();
+  });
+
   // Update token when input changes
   elements.tokenInput.addEventListener('input', () => {
     currentToken = elements.tokenInput.value.trim();
@@ -90,8 +106,9 @@ function setupEventListeners() {
 }
 
 function initializeHF() {
-  hf = currentToken ? new ImageProvider(currentToken) : null;
-  updateStatus('token', currentToken ? 'Token loaded' : 'No token provided', currentToken ? 'info' : 'warning');
+  const hosted = elements.credentialMode.value === 'service';
+  hf = hosted ? new ImageProvider('', 'service') : currentToken ? new ImageProvider(currentToken) : null;
+  updateStatus('token', hosted ? 'Hosted access required' : currentToken ? 'Token loaded' : 'No token provided', hosted || currentToken ? 'info' : 'warning');
   debugLog(currentToken ? 'User credential loaded in memory' : 'Enter a token to use the provider');
 }
 
@@ -133,7 +150,7 @@ async function testToken() {
   try {
     await provider.validateToken();
     if (provider !== hf) return;
-    updateStatus('token', 'Valid - User', 'success');
+    updateStatus('token', elements.credentialMode.value === 'service' ? 'Valid - Hosted access' : 'Valid - User', 'success');
     showMessage('Token is valid and working!');
   } catch {
     if (provider !== hf) return;
@@ -217,11 +234,13 @@ function toggleDebugConsole() {
 
   if (debugConsole.classList.contains('collapsed')) {
     debugConsole.classList.remove('collapsed');
-    debugToggle.textContent = '▼';
+    required('debug-header', HTMLElement).setAttribute('aria-expanded', 'true');
+    debugToggle.textContent = '-';
     debugToggle.style.transform = 'rotate(0deg)';
   } else {
     debugConsole.classList.add('collapsed');
-    debugToggle.textContent = '▶';
+    required('debug-header', HTMLElement).setAttribute('aria-expanded', 'false');
+    debugToggle.textContent = '+';
     debugToggle.style.transform = 'rotate(-90deg)';
   }
 }
@@ -248,7 +267,10 @@ function toggleMode() {
 async function handleReferenceImageUpload() {
   const file = elements.referenceImageInput.files?.[0];
   if (!file) return;
-  try { elements.oldImage.src = await blobToBase64(file); }
+  if (file.size > 2_000_000 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    showMessage('Use a PNG, JPEG or WebP reference image up to 2 MB', true); return;
+  }
+  try { elements.oldImage.src = await blobToBase64(file); uploadedReference = file; }
   catch { showMessage('Failed to read reference image', true); }
 }
 
@@ -272,6 +294,7 @@ function updateRecreateStatus(type: 'api' | 'recreation', message: string, statu
 async function recreateImage() { await runGeneration(true); }
 
 async function getReferenceImageBlob(): Promise<Blob> {
+  if (uploadedReference) return uploadedReference;
   const response = await fetch(elements.oldImage.src);
   if (!response.ok) throw new Error('Failed to load reference image');
   return response.blob();

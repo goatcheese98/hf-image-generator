@@ -2,34 +2,31 @@ import { test, expect, type Page } from '@playwright/test';
 
 const token = 'offline-user-credential';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
-interface FixtureOptions { failure?: boolean; retry?: boolean; unsupported?: boolean; sdkFailure?: boolean }
+interface FixtureOptions { failure?: boolean; retry?: boolean; unsupported?: boolean; loading?: boolean; service?: boolean; serviceFailure?: boolean }
 async function fixtures(page: Page, options: FixtureOptions = {}) {
-  const errors: string[] = [];
-  const logs: string[] = [];
+  const errors: string[] = [], logs: string[] = [];
   const requests: {url: string; body: string; auth: string | undefined}[] = [];
-  let imageRequests = 0;
+  const session = crypto.randomUUID();
+  const scenario = options.serviceFailure ? 'service-failure' : options.failure ? 'failure' : options.loading ? 'loading' : options.retry ? 'retry' : options.unsupported ? 'unsupported' : options.service ? 'service' : 'success';
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => logs.push(message.text()));
   await page.route('**/*', async route => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.hostname === '127.0.0.1') return route.continue();
-    // All provider traffic is fulfilled offline, including identity checks.
-    if (url.hostname === 'huggingface.co' || url.hostname === 'api-inference.huggingface.co') {
+    const request = route.request(), url = new URL(request.url());
+    if (url.hostname !== '127.0.0.1') {errors.push(`Unexpected external request: ${url.hostname}`); return route.abort();}
+    if (url.pathname.endsWith('/api/provider')) {
       requests.push({url: request.url(), body: request.postData() ?? '', auth: request.headers().authorization});
-      if (url.pathname === '/api/whoami-v2') return route.fulfill({status: options.failure ? 401 : 200, json: {name: 'offline-user'}});
-      imageRequests++;
-      if (options.failure) return route.fulfill({status: 401, json: {error: `echo ${token}`}});
-      if (options.sdkFailure && imageRequests === 1) return route.fulfill({status: 400, json: {error: 'SDK fixture failure'}});
-      if (options.retry && imageRequests === 2) return route.fulfill({status: 503, json: {error: 'loading'}});
-      if (options.unsupported && request.headers()['content-type']?.startsWith('multipart/')) return route.fulfill({status: 404, json: {error: 'unsupported'}});
-      return route.fulfill({contentType: 'image/png', body: png});
+      return route.continue({headers: {...request.headers(), 'x-offline-session': session, 'x-offline-case': scenario}});
     }
-    errors.push(`Unexpected external request: ${url.hostname}`);
-    return route.abort();
+    return route.continue();
   });
   await page.goto('./');
-  return {errors, logs, requests};
+  const upstream = async (): Promise<{url: string; body: string; usedServiceKey: boolean}[]> => {
+    const response = await page.request.get(`/__fixtures/state?session=${session}`);
+    const value: unknown = await response.json();
+    if (!value || typeof value !== 'object' || !('calls' in value) || !Array.isArray(value.calls)) throw new Error('Invalid fixture state');
+    return value.calls as {url: string; body: string; usedServiceKey: boolean}[];
+  };
+  return {errors, logs, requests, upstream};
 }
 async function enterToken(page: Page) { await page.locator('#token-input').fill(token); }
 async function generated(page: Page, selector = '#new-image') {
@@ -69,7 +66,7 @@ test('selected model generates a decoded image and downloads identical fixture b
   await expect(page.locator('#api-status-text')).toHaveText('Connection successful');
   await page.locator('#generate-btn').click();
   await generated(page);
-  expect(state.requests.at(-1)?.url).toContain('stabilityai/stable-diffusion-xl-base-1.0');
+  expect(state.requests.at(-1)?.body).toContain('stabilityai/stable-diffusion-xl-base-1.0');
   expect(state.requests.at(-1)?.body).toContain('offline landscape');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#download-image').click()]);
   expect(download.suggestedFilename()).toBe('generated-image.png');
@@ -95,15 +92,13 @@ test('provider failure resets controls and does not expose echoed credentials', 
   expect(state.errors).toEqual([]);
 });
 
-test('SDK fallback retries model loading once', async ({page}) => {
-  await page.clock.install();
-  const state = await fixtures(page, {sdkFailure: true, retry: true});
+test('server boundary retries model loading once', async ({page}) => {
+  const state = await fixtures(page, {retry: true});
   await enterToken(page);
   await page.locator('#generate-btn').click();
-  await expect.poll(() => state.requests.length).toBe(2);
-  await page.clock.fastForward(11000);
   await generated(page);
-  expect(state.requests).toHaveLength(3);
+  expect(await state.upstream()).toHaveLength(2);
+  expect(state.requests).toHaveLength(1);
   expect(state.errors).toEqual([]);
 });
 
@@ -119,26 +114,17 @@ for (const unsupported of [false, true]) {
     await generated(page, '#recreated-image');
     await expect(page.locator('#download-recreated')).toBeVisible();
     expect(state.requests[0]?.body).toContain('watercolor');
-    if (unsupported) expect(state.requests.at(-1)?.body).toContain('vintage black and white');
+    if (unsupported) expect((await state.upstream()).at(-1)?.body).toContain('vintage black and white');
     expect(state.errors).toEqual([]);
   });
 }
 
 test('persistent loading fails after the single direct retry', async ({page}) => {
-  await page.clock.install();
-  const state = await fixtures(page, {sdkFailure: true});
-  let directRequests = 0;
-  await page.route('https://api-inference.huggingface.co/**', async route => {
-    directRequests++;
-    return route.fulfill({status: directRequests === 1 ? 400 : 503, json: {error: 'loading'}});
-  });
+  const state = await fixtures(page, {loading: true});
   await enterToken(page);
   await page.locator('#generate-btn').click();
-  // The SDK and direct fallback share this fixture endpoint.
-  await expect.poll(() => directRequests).toBe(2);
-  await page.clock.fastForward(11000);
   await expect(page.locator('#generation-status-text')).toHaveText('Generation failed');
-  expect(directRequests).toBe(3);
+  expect(await state.upstream()).toHaveLength(2);
   await expect(page.locator('#generate-btn')).toBeEnabled();
   expect(state.errors).toEqual([]);
 });
@@ -153,4 +139,43 @@ test('recreation API test uses the default reference and leaves results empty', 
   await expect(page.locator('#test-recreate-api-btn')).toBeEnabled();
   expect(state.requests[0]?.body).toContain('test image generation');
   expect(state.errors).toEqual([]);
+});
+
+
+test('authorized hosted access generates, retries and downloads without a browser provider secret', async ({page}) => {
+  const state = await fixtures(page, {service: true});
+  await page.locator('#credential-mode').selectOption('service');
+  await expect(page.locator('#token-input')).toBeDisabled();
+  await page.locator('#generate-btn').click();
+  await generated(page);
+  expect((await state.upstream())[0]?.usedServiceKey).toBe(true);
+  expect(await state.upstream()).toHaveLength(2);
+  expect(state.requests[0]?.auth).toBeUndefined();
+  expect(state.logs.join('\n')).not.toContain('NONSECRET_SERVER_CREDENTIAL_CANARY');
+  expect(await page.locator('body').innerText()).not.toContain('NONSECRET_SERVER_CREDENTIAL_CANARY');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#download-image').click()]);
+  expect(download.suggestedFilename()).toBe('generated-image.png');
+  expect(state.errors).toEqual([]);
+});
+
+test('unauthorized hosted access fails closed and makes no provider calls', async ({page}) => {
+  const state = await fixtures(page);
+  await page.locator('#credential-mode').selectOption('service');
+  await page.locator('#generate-btn').click();
+  await expect(page.locator('#generation-status-text')).toHaveText('Generation failed');
+  expect(await state.upstream()).toHaveLength(0);
+  await expect(page.locator('#generate-btn')).toBeEnabled();
+});
+
+
+test('authorized hosted provider failure resets UI without leaking server credential or raw body', async ({page}) => {
+  const state = await fixtures(page, {serviceFailure: true});
+  await page.locator('#credential-mode').selectOption('service');
+  await page.locator('#generate-btn').click();
+  await expect(page.locator('#generation-status-text')).toHaveText('Generation failed');
+  expect((await state.upstream())[0]?.usedServiceKey).toBe(true);
+  expect(state.logs.join('\n')).not.toContain('NONSECRET_SERVER_CREDENTIAL_CANARY');
+  expect(await page.locator('body').innerText()).not.toContain('NONSECRET_SERVER_CREDENTIAL_CANARY');
+  await expect(page.locator('#generate-btn')).toBeEnabled();
+  await expect(page.locator('#download-image')).toBeHidden();
 });

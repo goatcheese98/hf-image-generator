@@ -1,4 +1,4 @@
-name: Verify and deploy to GitHub Pages
+name: Verify application and Worker (no deployment)
 
 on:
   push:
@@ -22,35 +22,17 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run check:assets
+      - run: npm run test:api
+      - run: npm audit --audit-level=high
+      - run: npm run dry-run
+        env:
+          CLOUDFLARE_SEND_METRICS: 'false'
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - uses: actions/upload-artifact@v4
         with:
           name: verified-dist
-          path: dist
-
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: verified-dist
-          path: dist
-      - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - uses: actions/deploy-pages@v4
-        id: deployment
+          path: |
+            dist
+            work/screenshots
+            test-results
