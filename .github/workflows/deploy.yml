@@ -11,9 +11,16 @@ permissions:
 
 jobs:
   verify:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact tested head
+        run: |
+          mkdir -p work/evidence
+          git rev-parse HEAD | tee work/evidence/tested-head.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -24,15 +31,20 @@ jobs:
       - run: npm run check:assets
       - run: npm run test:api
       - run: npm audit --audit-level=high
-      - run: npm run dry-run
+      - name: Real Worker and SQLite runtime tests (bounded, offline)
+        run: |
+          set -o pipefail
+          timeout 180s npm run test:runtime 2>&1 | tee work/evidence/runtime.log
         env:
           CLOUDFLARE_SEND_METRICS: 'false'
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: verified-dist
           path: |
             dist
             work/screenshots
             test-results
+            work/evidence

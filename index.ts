@@ -192,11 +192,12 @@ async function runGeneration(recreate: boolean, test = false) {
     }
     status(test ? 'Connection successful' : 'Image generated successfully!', 'success');
     showMessage(test ? 'API connection is working!' : 'Image generated successfully!');
+    if (result.method === 'enhanced-text') showMessage('Created using a text-only fallback; the uploaded reference was not analyzed.');
     debugLog(result.method === 'enhanced-text' ? 'Created using enhanced text fallback' : 'Provider request completed', 'success');
-  } catch {
+  } catch (error) {
     if (provider !== hf) return;
     status(test ? 'Connection failed' : 'Generation failed', 'error');
-    showMessage('Provider request failed. Check your token, model access and provider availability.', true);
+    showMessage(error instanceof Error && ['This model is unavailable from the configured provider. Choose another model.', 'Request quota exceeded. Try again later.'].includes(error.message) ? error.message : 'Provider request failed. Check your token, model access and provider availability.', true);
     debugLog('Provider request failed', 'error');
   } finally {
     if (recreate) showRecreateLoading(false); else showLoading(false);

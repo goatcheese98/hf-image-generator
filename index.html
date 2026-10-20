@@ -21,7 +21,7 @@
                 <div class="control-group">
                     <label for="credential-mode">Credential source:</label>
                     <select id="credential-mode"><option value="user">My token (in memory)</option><option value="service">Hosted access (requires authorization)</option></select>
-                    <small>Your token is sent only to this site’s provider handler and HuggingFace. Hosted access is disabled until configured by the owner.</small>
+                    <small>Your token is sent only to this site’s provider handler and HuggingFace. Hosted access supports FLUX.1 Schnell only and is disabled until configured by the owner.</small>
                     <label for="token-input">HuggingFace Token:</label>
                     <div class="input-with-button">
                         <input type="password" id="token-input" maxlength="256" autocomplete="off" spellcheck="false" placeholder="Enter your HF token (required)">
@@ -118,7 +118,7 @@
                     <div class="control-group">
                         <label for="recreate-prompt">Transformation Prompt:</label>
                         <input type="text" id="recreate-prompt" maxlength="2000" placeholder="Describe how you want to transform the reference image (e.g., 'make it a watercolor painting', 'convert to anime style', 'add sunset lighting')">
-                        <small class="help-text">Uses image-to-image when the selected model supports it. The fallback uses a fixed vintage photograph description plus your prompt; it does not analyze the uploaded image.</small>
+                        <small class="help-text">Schnell uses a text-only fallback. Other models use image-to-image when supported. The fallback uses a fixed vintage photograph description plus your prompt; it does not analyze the uploaded image.</small>
                     </div>
                     
                     <div class="button-group">

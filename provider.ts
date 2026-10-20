@@ -14,7 +14,7 @@ export class ImageProvider {
         ...(this.mode === 'user' ? {Authorization: `Bearer ${this.token}`} : {})},
       body: JSON.stringify(input),
     });
-    if (!response.ok) throw new Error('Provider request unavailable');
+    if (!response.ok) throw new Error(response.status === 424 ? 'This model is unavailable from the configured provider. Choose another model.' : response.status === 429 ? 'Request quota exceeded. Try again later.' : 'Provider request unavailable');
     return response;
   }
   async validateToken(): Promise<void> {await this.request({action: 'token'});}

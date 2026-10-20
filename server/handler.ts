@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
 import { API_PATH, LIMITS, MODELS, type ProviderRequest } from '../shared/contracts';
+import {providerContract, enhancedPrompt} from './provider-contract';
 import type { BudgetBinding } from './budget';
 
 export interface Environment {
@@ -13,7 +14,7 @@ export interface Environment {
 export interface Dependencies {fetch: typeof fetch; timeoutMs?: number; retryMs?: number}
 class Rejection extends Error {constructor(readonly status: number) {super('Request rejected');}}
 const safeHeaders = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'};
-const fail = (status: number) => Response.json({error: status === 429 ? 'Request quota exceeded' : 'Provider request unavailable'}, {status, headers: safeHeaders});
+const fail = (status: number) => Response.json({error: status === 424 ? 'This model is unavailable from the configured provider. Choose another model.' : status === 429 ? 'Request quota exceeded. Try again later.' : 'Provider request unavailable', code: status === 424 ? 'MODEL_UNAVAILABLE' : 'PROVIDER_UNAVAILABLE'}, {status, headers: safeHeaders});
 function record(value: unknown): value is Record<string, unknown> {return !!value && typeof value === 'object' && !Array.isArray(value);}
 async function bounded<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
@@ -66,7 +67,7 @@ async function fingerprint(value: string): Promise<string> {
   const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(data), n => n.toString(16).padStart(2, '0')).join('');
 }
-export function createHandler(dependencies: Dependencies = {fetch}) {
+export function createHandler(dependencies: Dependencies = {fetch: (input, init) => globalThis.fetch(input, init)}) {
   const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
   return async (request: Request, env: Environment): Promise<Response> => {
     const controller = new AbortController();
@@ -124,7 +125,7 @@ export function createHandler(dependencies: Dependencies = {fetch}) {
       const call = async (url: string, body?: () => BodyInit, json = true): Promise<Response> => {
         for (let retry = 0; retry < 2; retry++) {
           if (++attempts > LIMITS.attempts) throw new Rejection(502);
-          const response = await bounded(dependencies.fetch(url, {method: body ? 'POST' : 'GET', redirect: 'error', signal,
+          const response = await bounded(dependencies.fetch(url, {method: body ? 'POST' : 'GET', redirect: 'manual', signal,
             headers: {Authorization: `Bearer ${token}`, ...(body && json ? {'Content-Type': 'application/json'} : {})}, ...(body ? {body: body()} : {})}), signal);
           if (response.status !== 503 || retry !== 0) return response;
           void response.body?.cancel().catch(() => {});
@@ -138,30 +139,43 @@ export function createHandler(dependencies: Dependencies = {fetch}) {
         void response.body?.cancel().catch(() => {});
         return response.ok ? Response.json({valid: true}, {headers: safeHeaders}) : fail(401);
       }
-      const endpoint = `https://router.huggingface.co/hf-inference/models/${input.model}`;
-      const textBody = (prompt: string) => JSON.stringify({inputs: prompt, parameters: {width: 512, height: 512, num_inference_steps: 20, guidance_scale: 7.5}});
-      let method = blob ? 'image' : 'text';
-      let response = blob ? await call(endpoint, () => {
-        const form = new FormData(); form.append('inputs', blob);
-        form.append('parameters', JSON.stringify({prompt: input.prompt, strength: 0.75, guidance_scale: 7.5, num_inference_steps: 20}));
-        return form;
-      }, false) : await call(endpoint, () => textBody(input.prompt));
-      if (blob && [400,404].includes(response.status)) {
+      const base64Reference = blob ? input.reference?.split(',')[1] : undefined;
+      const first = providerContract(input.model, input.prompt, base64Reference);
+      let method = blob ? first.textOnly ? 'enhanced-text' : 'image' : 'text';
+      let contract = blob && first.textOnly ? providerContract(input.model, enhancedPrompt(input.prompt)) : first;
+      let response = await call(contract.endpoint, () => JSON.stringify(contract.body));
+      // An unavailable model is different from an unsupported image task. Do not
+      // retry missing/retired models as though the reference image was the problem.
+      if (blob && !first.textOnly && [400,422].includes(response.status)) {
         void response.body?.cancel().catch(() => {});
-        method = 'enhanced-text';
-        response = await call(endpoint, () => textBody(`${input.prompt}, based on a vintage black and white photograph, maintaining the original composition and subject matter, high quality, detailed`));
+        method = 'enhanced-text'; contract = providerContract(input.model, enhancedPrompt(input.prompt));
+        response = await call(contract.endpoint, () => JSON.stringify(contract.body));
       }
-      if (!response.ok) {void response.body?.cancel().catch(() => {}); throw new Rejection(502);}
-      const type = response.headers.get('Content-Type')?.split(';')[0] ?? '';
-      const output = await bytes(response.body, LIMITS.responseBytes, signal);
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => {});
+        throw new Rejection([400,404,410,422].includes(response.status) ? 424 : 502);
+      }
+      let type = response.headers.get('Content-Type')?.split(';')[0] ?? '';
+      let output: Uint8Array<ArrayBuffer>;
+      if (contract.jsonImage) {
+        const raw = await bytes(response.body, Math.ceil(LIMITS.responseBytes / 3) * 4 + 1024, signal);
+        let data: unknown;
+        try {data = JSON.parse(new TextDecoder().decode(raw));} catch {throw new Rejection(502);}
+        if (!record(data) || !Array.isArray(data.data) || data.data.length !== 1 || !record(data.data[0])
+          || typeof data.data[0].b64_json !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.data[0].b64_json)) throw new Rejection(502);
+        try {output = Uint8Array.from(atob(data.data[0].b64_json), character => character.charCodeAt(0));} catch {throw new Rejection(502);}
+        if (output.length > LIMITS.responseBytes) throw new Rejection(502);
+        type = ['image/png','image/jpeg','image/webp'].find(candidate => imageType(output, candidate)) ?? '';
+      } else output = await bytes(response.body, LIMITS.responseBytes, signal);
       if (!imageType(output, type)) throw new Rejection(502);
       return new Response(output, {headers: {...safeHeaders, 'Content-Type': type, 'X-Image-Method': method}});
     } catch (error) {
       return fail(signal.aborted ? 504 : error instanceof Rejection ? error.status : 502);
     } finally {
+      // Finish cleanup inside the request lifetime; workerd may cancel detached
+      // promises after returning. The original deadline and lease bound failures.
+      if (release && !signal.aborted) await bounded(release(), signal).catch(() => {});
       clearTimeout(timer);
-      // Admission expiry also bounds cleanup if storage is temporarily unavailable.
-      if (release) void release().catch(() => {});
     }
   };
 }

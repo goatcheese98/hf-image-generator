@@ -12,7 +12,7 @@ test('user credentials traverse only the fixed provider endpoint; binary result 
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(response.headers.get('X-Image-Method'), 'text');
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0]?.usedUserKey, true);
-  assert.equal(f.calls[0]?.url, `https://router.huggingface.co/hf-inference/models/${MODELS[0]}`);
+  assert.equal(f.calls[0]?.url, 'https://router.huggingface.co/nscale/v1/images/generations');
   assert.ok(!JSON.stringify([...f.storage.values()]).includes('offline-user-credential'));
 });
 
@@ -23,7 +23,7 @@ for (const [name, input, headers, status] of [
   ['oversize prompt', {...generation, prompt: 'x'.repeat(2001)}, {}, 400],
   ['coerced action array', {...generation, action: ['generate']}, {}, 400],
   ['unknown action', {...generation, action: 'anything'}, {}, 400],
-  ['invalid reference', {...generation, action: 'recreate', reference: 'data:image/svg+xml;base64,PHN2Zz4='}, {}, 400],
+  ['invalid reference', {...generation, model: MODELS[2], action: 'recreate', reference: 'data:image/svg+xml;base64,PHN2Zz4='}, {}, 400],
   ['unexpected reference', {...generation, reference: 'anything'}, {}, 400],
   ['invalid token', generation, {Authorization: 'Bearer short'}, 401],
   ['unknown credential source', generation, {'X-Credential-Mode': 'other'}, 400],
@@ -104,9 +104,9 @@ test('one loading retry succeeds; persistent loading remains bounded', async () 
   const loading = fixture({loading: true}); assert.equal((await loading.handle(apiRequest(), loading.env)).status, 502); assert.equal(loading.calls.length, 2);
 });
 
-test('recreation 404 falls back to enhanced text and does not drop image errors into logs', async () => {
+test('recreation unsupported task falls back to enhanced text and does not drop image errors into logs', async () => {
   const f = fixture({unsupported: true});
-  const response = await f.handle(apiRequest({...generation, action: 'recreate', reference: `data:image/png;base64,${PNG.toString('base64')}`}), f.env);
+  const response = await f.handle(apiRequest({...generation, model: MODELS[2], action: 'recreate', reference: `data:image/png;base64,${PNG.toString('base64')}`}), f.env);
   assert.equal(response.status, 200); assert.equal(response.headers.get('X-Image-Method'), 'enhanced-text');
   assert.equal(f.calls.length, 2); assert.ok(f.calls[1]?.body.includes('vintage black and white'));
 });
@@ -179,8 +179,45 @@ test('abandoned admission lease expires without resetting request counts', async
 
 test('recreation plus fallback can never exceed three upstream calls', async () => {
   let calls = 0;
-  const fakeFetch: typeof fetch = async () => new Response(null, {status: ++calls === 2 ? 404 : 503});
+  const fakeFetch: typeof fetch = async () => new Response(null, {status: ++calls === 2 ? 422 : 503});
   const f = fixture({}, {fetch: fakeFetch});
-  const response = await f.handle(apiRequest({...generation, action:'recreate', reference:`data:image/png;base64,${PNG.toString('base64')}`}), f.env);
+  const response = await f.handle(apiRequest({...generation, model: MODELS[2], action:'recreate', reference:`data:image/png;base64,${PNG.toString('base64')}`}), f.env);
   assert.equal(response.status, 502); assert.equal(calls, 3);
+});
+
+test('official Schnell/Nscale contract uses flat JSON, bounded 4 steps and zero guidance', async () => {
+  const f=fixture(); const response=await f.handle(apiRequest(),f.env);
+  assert.equal(response.status,200);
+  assert.equal(f.calls[0]?.url,'https://router.huggingface.co/nscale/v1/images/generations');
+  assert.deepEqual(JSON.parse(f.calls[0]?.body ?? '{}'), {model:MODELS[0],prompt:'offline landscape',response_format:'b64_json',width:512,height:512,num_inference_steps:4,guidance_scale:0});
+});
+
+test('official hf-inference image contract uses base64 JSON and target_size, without multipart/strength', async () => {
+  const f=fixture(); const response=await f.handle(apiRequest({...generation,model:MODELS[2],action:'recreate',reference:`data:image/png;base64,${PNG.toString('base64')}`}),f.env);
+  assert.equal(response.status,200); assert.equal(response.headers.get('X-Image-Method'),'image');
+  assert.deepEqual(JSON.parse(f.calls[0]?.body ?? '{}'),{inputs:PNG.toString('base64'),parameters:{prompt:'offline landscape',guidance_scale:7.5,num_inference_steps:20,target_size:{width:512,height:512}}});
+});
+
+test('Schnell recreation is explicitly text-only and never sends reference bytes to Nscale', async () => {
+  const f=fixture(); const response=await f.handle(apiRequest({...generation,action:'recreate',reference:`data:image/png;base64,${PNG.toString('base64')}`}),f.env);
+  assert.equal(response.status,200); assert.equal(response.headers.get('X-Image-Method'),'enhanced-text');
+  assert.ok(f.calls[0]?.body.includes('vintage black and white')); assert.ok(!f.calls[0]?.body.includes(PNG.toString('base64')));
+});
+
+test('unavailable model returns an explicit safe code and does not retry it as an image-task fallback', async () => {
+  const f=fixture({unavailable:true}); const response=await f.handle(apiRequest({...generation,model:MODELS[2],action:'recreate',reference:`data:image/png;base64,${PNG.toString('base64')}`}),f.env);
+  assert.equal(response.status,424); assert.equal(f.calls.length,1); assert.equal((await response.json()).code,'MODEL_UNAVAILABLE');
+});
+
+test('Nscale output URLs are never followed instead of bounded inline image data', async () => {
+  const urls:string[]=[];
+  const f=fixture({}, {fetch:async input => {urls.push(String(input)); return Response.json({data:[{url:'https://attacker.invalid/image'}]});}});
+  assert.equal((await f.handle(apiRequest(),f.env)).status,502);
+  assert.deepEqual(urls,['https://router.huggingface.co/nscale/v1/images/generations']);
+});
+
+test('provider redirects are handled manually and never followed', async () => {
+  let calls=0;
+  const f=fixture({}, {fetch:async (_input,init) => {calls++;assert.equal(init?.redirect,'manual');return new Response(null,{status:302,headers:{Location:'https://attacker.invalid/'}});}});
+  assert.equal((await f.handle(apiRequest(),f.env)).status,502);assert.equal(calls,1);
 });

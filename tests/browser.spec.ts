@@ -2,12 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 
 const token = 'offline-user-credential';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
-interface FixtureOptions { failure?: boolean; retry?: boolean; unsupported?: boolean; loading?: boolean; service?: boolean; serviceFailure?: boolean }
+interface FixtureOptions { failure?: boolean; retry?: boolean; unsupported?: boolean; loading?: boolean; service?: boolean; serviceFailure?: boolean; unavailable?: boolean }
 async function fixtures(page: Page, options: FixtureOptions = {}) {
   const errors: string[] = [], logs: string[] = [];
   const requests: {url: string; body: string; auth: string | undefined}[] = [];
   const session = crypto.randomUUID();
-  const scenario = options.serviceFailure ? 'service-failure' : options.failure ? 'failure' : options.loading ? 'loading' : options.retry ? 'retry' : options.unsupported ? 'unsupported' : options.service ? 'service' : 'success';
+  const scenario = options.unavailable ? 'unavailable' : options.serviceFailure ? 'service-failure' : options.failure ? 'failure' : options.loading ? 'loading' : options.retry ? 'retry' : options.unsupported ? 'unsupported' : options.service ? 'service' : 'success';
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => logs.push(message.text()));
   await page.route('**/*', async route => {
@@ -107,6 +107,7 @@ for (const unsupported of [false, true]) {
     const state = await fixtures(page, {unsupported});
     await enterToken(page);
     await page.locator('#recreate-mode').check();
+    await page.locator('#recreate-model-select').selectOption('stabilityai/stable-diffusion-xl-base-1.0');
     await page.locator('#reference-image-input').setInputFiles({name: 'reference.png', mimeType: 'image/png', buffer: png});
     await expect(page.locator('#old-image')).toHaveAttribute('src', /^data:image/);
     await page.locator('#recreate-prompt').fill('watercolor');
@@ -144,7 +145,15 @@ test('recreation API test uses the default reference and leaves results empty', 
 
 test('authorized hosted access generates, retries and downloads without a browser provider secret', async ({page}) => {
   const state = await fixtures(page, {service: true});
+  await page.locator('#model-select').selectOption('stabilityai/stable-diffusion-xl-base-1.0');
+  await page.locator('#recreate-mode').check();
+  await page.locator('#recreate-model-select').selectOption('stabilityai/stable-diffusion-xl-base-1.0');
+  await page.locator('#generate-mode').check();
   await page.locator('#credential-mode').selectOption('service');
+  for (const selector of ['#model-select', '#recreate-model-select']) {
+    await expect(page.locator(selector)).toHaveValue('black-forest-labs/FLUX.1-schnell');
+    expect(await page.locator(`${selector} option`).evaluateAll(options => options.slice(1).every(option => (option as HTMLOptionElement).disabled))).toBe(true);
+  }
   await expect(page.locator('#token-input')).toBeDisabled();
   await page.locator('#generate-btn').click();
   await generated(page);
@@ -178,4 +187,20 @@ test('authorized hosted provider failure resets UI without leaking server creden
   expect(await page.locator('body').innerText()).not.toContain('NONSECRET_SERVER_CREDENTIAL_CANARY');
   await expect(page.locator('#generate-btn')).toBeEnabled();
   await expect(page.locator('#download-image')).toBeHidden();
+});
+
+
+test('unavailable models give a safe actionable message and keep download hidden', async ({page}) => {
+  await fixtures(page,{unavailable:true}); await enterToken(page);
+  await page.locator('#generate-btn').click();
+  await expect(page.locator('#error-message')).toContainText('This model is unavailable from the configured provider. Choose another model.');
+  await expect(page.locator('#download-image')).toBeHidden();
+});
+
+test('Schnell recreation explains the text-only fallback without claiming image analysis', async ({page}) => {
+  const state=await fixtures(page); await enterToken(page);
+  await page.locator('#recreate-mode').check(); await page.locator('#recreate-prompt').fill('watercolor');
+  await page.locator('#recreate-btn').click(); await generated(page,'#recreated-image');
+  await expect(page.locator('#success-message')).toContainText('uploaded reference was not analyzed');
+  expect(await state.upstream()).toHaveLength(1);
 });

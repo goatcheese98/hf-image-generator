@@ -5,7 +5,7 @@ import { accessToken, fixture, ORIGIN, type Scenario } from './support';
 import { ASSET_HEADERS } from '../server/worker';
 import { API_PATH, LIMITS } from '../shared/contracts';
 
-const scenarios: Record<string, Scenario> = {success: {}, failure: {failure: true}, retry: {retry: true}, loading: {loading: true}, unsupported: {unsupported: true}, service: {retry: true}, 'service-failure': {failure: true}};
+const scenarios: Record<string, Scenario> = {success: {}, unavailable: {unavailable:true}, failure: {failure: true}, retry: {retry: true}, loading: {loading: true}, unsupported: {unsupported: true}, service: {retry: true}, 'service-failure': {failure: true}};
 const sessions = new Map<string, ReturnType<typeof fixture>>();
 const assertion = await accessToken();
 const vite = await preview({preview: {host: '127.0.0.1', port: 4174, strictPort: true}});

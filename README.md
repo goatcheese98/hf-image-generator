@@ -8,6 +8,7 @@ npm run typecheck
 npm run test:api
 npm run build
 npm run check:assets
+CLOUDFLARE_SEND_METRICS=false npm run test:runtime
 npx playwright install --with-deps chromium
 npm run test:browser
 CLOUDFLARE_SEND_METRICS=false npm run dry-run
@@ -23,8 +24,10 @@ The module entry is `index.html` → `index.ts`; `utils.ts` and `shared/contract
 
 “Hosted access” sends no provider token from the browser. The handler requires configured server bindings, a cryptographically verified Cloudflare Access JWT and an explicitly allowed subject. Unconfigured/unauthorized requests fail closed before any provider call. There are no provisioned secrets, identities, routes or deployments in this change.
 
-Raw provider errors, identity payloads and credentials are never logged or returned. Images and API responses are not cached. The former browser provider SDK is removed; the server owns bounded retry and image-to-image fallback. The fallback uses a fixed vintage photograph description, not image analysis. API test buttons consume the same quotas as generation.
+Raw provider errors, identity payloads and credentials are never logged or returned. Images and API responses are not cached. Schnell is a text-only Nscale/HuggingFace-router model in this application. Recreation displays that its fixed-description fallback does not analyze the uploaded reference. Unavailable models produce an explicit safe message; no provider is chosen automatically. See [official contract review](docs/provider-contracts.md).
+
+The former browser provider SDK is removed; the server owns bounded retry and image-to-image fallback. The fallback uses a fixed vintage photograph description, not image analysis. API test buttons consume the same quotas as generation.
 
 ## Verification and styling
 
-See [the foundation record](docs/lum-foundation.md) for permitted references, font licenses, fallback stacks and cloud screenshots. This is styling within the existing layout, not a Paper design or human design approval. CI runs install, strict types, API abuse tests, production build, artifact scanning, dependency audit, Worker dry-run and Chromium flows. The old static Pages deployment job is removed because it cannot host the same-origin API. CI performs **no deployment**.
+See [the foundation record](docs/lum-foundation.md) for permitted references, font licenses, fallback stacks and cloud screenshots. This is styling within the existing layout, not a Paper design or human design approval. CI runs install, strict types, API abuse tests, production build, artifact scanning, dependency audit, real workerd/SQLite tests (including Worker dry-run) and Chromium flows. It records the exact head and always retains failure evidence within a bounded job. The old static Pages deployment job is removed because it cannot host the same-origin API. CI performs **no deployment**.
