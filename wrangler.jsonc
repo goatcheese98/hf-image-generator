@@ -1,0 +1,12 @@
+{
+  "name": "hf-image-generator",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {"directory": "./dist", "binding": "ASSETS", "run_worker_first": true},
+  "durable_objects": {"bindings": [{"name": "BUDGET", "class_name": "ProviderBudget"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["ProviderBudget"]}]
+  // No origin, identity configuration or provider secret is provisioned here.
+  // API requests fail closed until a human configures the documented bindings.
+}

@@ -1,0 +1,21 @@
+/* Permitted LUM Brain foundation; this is not a Paper design record. */
+:root {
+  color-scheme: light dark;
+  --bg: #fff; --panel: #fff; --panel2: #fafafa; --line: #e4e4e7;
+  --fg: #18181b; --mut: #66666f; --acc: #18181b; --on-acc: #fff;
+  --ok: #126746; --okbg: #edf8f3; --danger: #a71d2a; --dangerbg: #fff1f2;
+  --warn: #805000; --warnbg: #fff6df;
+  --r-xs: 6px; --r-sm: 8px; --r-md: 10px; --r-lg: 12px; --r-xl: 16px;
+  --fs-sm: .875rem; --fs-base: 1rem; --fs-lg: 1.1rem; --fs-xl: 1.5rem; --fs-2xl: 2rem; --fs-3xl: 2.5rem;
+  --font: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --shadow: 0 1px 2px rgb(24 24 27 / .06), 0 14px 34px -30px rgb(24 24 27 / .34);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0a0b; --panel: #121214; --panel2: #0e0e10; --line: #242428;
+    --fg: #ececee; --mut: #92929b; --acc: #d6a828; --on-acc: #141210;
+    --ok: #9bdfbe; --okbg: #0e201a; --danger: #ffb4af; --dangerbg: #311616;
+    --warn: #f0bf76; --warnbg: #2a2112; --shadow: 0 1px 2px rgb(0 0 0 / .18), 0 18px 42px -30px rgb(0 0 0 / .7);
+  }
+}

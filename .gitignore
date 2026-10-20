@@ -31,4 +31,11 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+work/
+test-results/
+playwright-report/
+
+.wrangler/
+.dev.vars
+.dev.vars.*

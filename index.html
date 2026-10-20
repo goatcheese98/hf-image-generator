@@ -1,6 +1,8 @@
 <!doctype html>
 <html>
     <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>HuggingFace Image Generator</title>
         <link rel="stylesheet" href="index.css">
     </head>
@@ -17,9 +19,12 @@
             <h2>Step 1: Setup & Authentication</h2>
             <div class="card">
                 <div class="control-group">
+                    <label for="credential-mode">Credential source:</label>
+                    <select id="credential-mode"><option value="user">My token (in memory)</option><option value="service">Hosted access (requires authorization)</option></select>
+                    <small>Your token is sent only to this site’s provider handler and HuggingFace. Hosted access supports FLUX.1 Schnell only and is disabled until configured by the owner.</small>
                     <label for="token-input">HuggingFace Token:</label>
                     <div class="input-with-button">
-                        <input type="password" id="token-input" placeholder="Enter your HF token (required)">
+                        <input type="password" id="token-input" maxlength="256" autocomplete="off" spellcheck="false" placeholder="Enter your HF token (required)">
                         <button id="test-token-btn">Test Token</button>
                     </div>
                     <small>Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
@@ -68,7 +73,7 @@
                     
                     <div class="control-group">
                         <label for="prompt-input">Image Prompt:</label>
-                        <textarea id="prompt-input" placeholder="Describe the image you want to generate..."></textarea>
+                        <textarea id="prompt-input" maxlength="2000" placeholder="Describe the image you want to generate..."></textarea>
                     </div>
                     
                     <div class="button-group">
@@ -105,15 +110,15 @@
                     <div class="control-group">
                         <label for="reference-image-input">Reference Image:</label>
                         <div class="file-input-container">
-                            <input type="file" id="reference-image-input" accept="image/*">
+                            <input type="file" id="reference-image-input" accept="image/png,image/jpeg,image/webp">
                             <small>Upload your own reference image or use the default one</small>
                         </div>
                     </div>
                     
                     <div class="control-group">
                         <label for="recreate-prompt">Transformation Prompt:</label>
-                        <input type="text" id="recreate-prompt" placeholder="Describe how you want to transform the reference image (e.g., 'make it a watercolor painting', 'convert to anime style', 'add sunset lighting')">
-                        <small class="help-text">This prompt will be used to transform the reference image above. The AI will analyze the reference image and create enhanced text prompts that incorporate its visual details, then generate a new image based on your transformation request.</small>
+                        <input type="text" id="recreate-prompt" maxlength="2000" placeholder="Describe how you want to transform the reference image (e.g., 'make it a watercolor painting', 'convert to anime style', 'add sunset lighting')">
+                        <small class="help-text">Schnell uses a text-only fallback. Other models use image-to-image when supported. The fallback uses a fixed vintage photograph description plus your prompt; it does not analyze the uploaded image.</small>
                     </div>
                     
                     <div class="button-group">
@@ -144,6 +149,7 @@
                     <h4>Generated Image</h4>
                     <div id="new-image-container">
                         <img id="new-image" alt="Generated image will appear here" />
+                        <a id="download-image" download="generated-image.png" hidden>Download image</a>
                         <div id="loading-spinner" class="spinner" style="display: none;">
                             <div class="spinner-circle"></div>
                             <p>Generating image...</p>
@@ -166,6 +172,7 @@
                         <h4>Recreated Image</h4>
                         <div id="recreated-image-container">
                             <img id="recreated-image" alt="Recreated image will appear here" />
+                            <a id="download-recreated" download="recreated-image.png" hidden>Download image</a>
                             <div id="recreate-loading-spinner" class="spinner" style="display: none;">
                                 <div class="spinner-circle"></div>
                                 <p>Recreating image...</p>
@@ -180,22 +187,21 @@
         </section>
 
         <!-- Messages -->
-        <div id="error-message"></div>
-        <div id="success-message"></div>
+        <div id="error-message" role="alert"></div>
+        <div id="success-message" role="status"></div>
 
         <!-- Debug Console (Collapsible) -->
         <section id="debug-section">
-            <div class="debug-header" onclick="toggleDebugConsole()">
-                <h3>Debug Console</h3>
-                <span id="debug-toggle">▼</span>
-            </div>
+            <button type="button" class="debug-header" id="debug-header" aria-expanded="false" aria-controls="debug-console">
+                <span>Debug Console</span>
+                <span id="debug-toggle" aria-hidden="true">▼</span>
+            </button>
             <div id="debug-console" class="collapsed">
                 <div id="debug-output"></div>
                 <button id="clear-debug-btn">Clear Debug</button>
             </div>
         </section>
 
-        <script src="utils.js"></script>
-        <script type="module" src="index.js"></script>
+        <script type="module" src="index.ts"></script>
     </body>
 </html>
